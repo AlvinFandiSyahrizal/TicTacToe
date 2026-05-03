@@ -12,6 +12,7 @@ model User {
   username  String   @unique
   password  String
   email     String?  @unique
+  avatarId  String   @default("knight")  // ← tambah ini
   points    Int      @default(1000)
   wins      Int      @default(0)
   losses    Int      @default(0)

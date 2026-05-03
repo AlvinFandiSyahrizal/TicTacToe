@@ -40,13 +40,25 @@ export async function getProfile(req, res) {
 
 // PATCH /api/user/update — ganti email atau password
 export async function updateProfile(req, res) {
-  const { email, oldPassword, newPassword } = req.body;
+  const { email, oldPassword, newPassword, avatarId } = req.body;
+
+  const VALID_AVATARS = [
+    "knight", "wizard", "archer", "skull", "robot",
+    "fox", "panda", "king", "flame", "thunder", "moon", "jester"
+  ];
 
   try {
     const user = await prisma.user.findUnique({ where: { id: req.user.id } });
     if (!user) return res.status(404).json({ message: "User tidak ditemukan" });
 
     const updates = {};
+
+    if (avatarId !== undefined) {
+      if (!VALID_AVATARS.includes(avatarId)) {
+        return res.status(400).json({ message: "Avatar tidak valid" });
+      }
+      updates.avatarId = avatarId;
+    }
 
     if (email !== undefined) {
       if (email !== "") {
@@ -61,16 +73,10 @@ export async function updateProfile(req, res) {
     }
 
     if (newPassword) {
-      if (!oldPassword) {
-        return res.status(400).json({ message: "Masukkan password lama dulu" });
-      }
+      if (!oldPassword) return res.status(400).json({ message: "Masukkan password lama dulu" });
       const match = await bcrypt.compare(oldPassword, user.password);
-      if (!match) {
-        return res.status(401).json({ message: "Password lama salah" });
-      }
-      if (newPassword.length < 6) {
-        return res.status(400).json({ message: "Password baru minimal 6 karakter" });
-      }
+      if (!match) return res.status(401).json({ message: "Password lama salah" });
+      if (newPassword.length < 6) return res.status(400).json({ message: "Password baru minimal 6 karakter" });
       updates.password = await bcrypt.hash(newPassword, 10);
     }
 
@@ -81,7 +87,7 @@ export async function updateProfile(req, res) {
     const updated = await prisma.user.update({
       where: { id: req.user.id },
       data: updates,
-      select: { id: true, username: true, email: true, points: true },
+      select: { id: true, username: true, email: true, points: true, avatarId: true },
     });
 
     return res.json(updated);

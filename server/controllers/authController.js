@@ -74,11 +74,21 @@ export async function login(req, res) {
       return res.status(401).json({ message: "Username atau password salah" });
     }
 
-    const token = generateToken(user);
-    return res.json({
-      token,
-      user: { id: user.id, username: user.username, points: user.points },
-    });
+// di fungsi register dan login, bagian select/return user:
+  const token = generateToken(user);
+  return res.status(201).json({
+    token,
+    user: {
+      id: user.id,
+      username: user.username,
+      points: user.points,
+      avatarId: user.avatarId,  // ← tambah ini
+      wins: user.wins,
+      losses: user.losses,
+      draws: user.draws,
+    },
+  });
+
   } catch (err) {
     console.error(err);
     return res.status(500).json({ message: "Server error" });
@@ -93,7 +103,7 @@ export async function me(req, res) {
       select: {
         id: true, username: true, email: true,
         points: true, wins: true, losses: true, draws: true,
-        createdAt: true,
+        avatarId: true,createdAt: true,
       },
     });
     if (!user) return res.status(404).json({ message: "User tidak ditemukan" });
