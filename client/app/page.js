@@ -6,10 +6,11 @@ import { getRank } from "@/components/RankBadge";
 import Avatar from "@/components/Avatar";
 import GamePanel from "@/components/GamePanel";
 import api from "@/lib/api";
+import { useSocket } from "@/lib/useSocket";
 
 const MODES = [
   { id: "bot",    icon: "🤖", title: "VS Bot",   desc: "Lawan komputer",         available: true  },
-  { id: "ranked", icon: "🏆", title: "Ranked",   desc: "Lawan pemain, +/- poin", available: false },
+  { id: "ranked", icon: "🏆", title: "Ranked",   desc: "Lawan pemain, +/- poin", available: true },
   { id: "friend", icon: "👥", title: "VS Teman", desc: "Tantang teman",           available: false },
 ];
 
@@ -19,6 +20,8 @@ export default function Home() {
   const [leaderboard, setLeaderboard] = useState([]);
   const [loadingLB, setLoadingLB] = useState(true);
   const [showAllLB, setShowAllLB] = useState(false);
+
+  const { onlineCount } = useSocket();
 
   const rank = user ? getRank(user.points) : null;
 
@@ -160,13 +163,11 @@ export default function Home() {
         </div>
 
         {/* Online count */}
-        <div className="bg-white dark:bg-gray-900 border border-gray-200 dark:border-gray-800 rounded-2xl p-4">
-          <p className="text-xs font-medium text-gray-400 uppercase tracking-widest mb-2">Online</p>
-          <div className="flex items-center gap-2">
-            <span className="w-2 h-2 rounded-full bg-green-400 animate-pulse flex-shrink-0" />
-            <p className="text-xs text-gray-500">— pemain online</p>
-          </div>
-          <p className="text-xs text-gray-400 mt-1">Update setelah Step 3</p>
+        <div className="flex items-center gap-2">
+          <span className="w-2 h-2 rounded-full bg-green-400 animate-pulse flex-shrink-0" />
+          <p className="text-xs text-gray-500">
+            {onlineCount} pemain online
+          </p>
         </div>
 
       </aside>

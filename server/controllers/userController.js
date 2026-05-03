@@ -8,8 +8,13 @@ export async function leaderboard(req, res) {
       orderBy: { points: "desc" },
       take: 50,
       select: {
-        id: true, username: true, points: true,
-        wins: true, losses: true, draws: true,
+        id: true, 
+        username: true, 
+        points: true,
+        wins: true, 
+        losses: true, 
+        draws: true,
+        avatarId: true,
       },
     });
     return res.json(users);

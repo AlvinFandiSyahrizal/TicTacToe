@@ -1,11 +1,15 @@
 "use client";
 
 import { useState, useEffect } from "react";
+import { useAuthStore } from "@/lib/useAuthStore";
+import { useSocket } from "@/lib/useSocket";
 import Board from "./Board";
 import GameStatus from "./GameStatus";
 import Timer from "./Timer";
 import CoinFlip from "./CoinFlip";
 import RoundHistory from "./RoundHistory";
+import Matchmaking from "./Matchmaking";
+import OnlineGame from "./OnlineGame";
 import {
   createBoard, applyMove, checkWinner, checkDraw,
   coinFlip, determineFirstPlayer,
@@ -13,8 +17,14 @@ import {
 import { getBotMove, randomMove } from "@/lib/botEngine";
 
 export default function GamePanel({ activeMode, onExit }) {
+  const { user } = useAuthStore();
+  const { socket } = useSocket();
 
-  // ── state game ──────────────────────────────────────────────
+  // Ranked state
+  const [rankPhase, setRankPhase] = useState("idle"); // idle | matchmaking | playing
+  const [matchData, setMatchData] = useState(null);
+
+  // Bot state
   const [board, setBoard]                 = useState(createBoard());
   const [firstPlayer, setFirstPlayer]     = useState(null);
   const [currentPlayer, setCurrentPlayer] = useState(null);
@@ -34,10 +44,12 @@ export default function GamePanel({ activeMode, onExit }) {
   const isGameOver   = winner !== null || isDraw || lostByTimeout || surrendered;
   const isPlayerTurn = currentPlayer === "X";
 
-  // Start sesi baru tiap mode berubah ke "bot"
   useEffect(() => {
     if (activeMode === "bot") startNewSession();
+    if (activeMode !== "ranked") setRankPhase("idle");
   }, [activeMode]);
+
+  // ── Bot logic (sama seperti sebelumnya) ─────────────────────
 
   function startNewSession() {
     const result = coinFlip();
@@ -65,7 +77,6 @@ export default function GamePanel({ activeMode, onExit }) {
     setTimerKey((k) => k + 1);
   }
 
-  // Bot move
   useEffect(() => {
     if (currentPlayer === "O" && !isGameOver) {
       const t = setTimeout(() => {
@@ -131,21 +142,85 @@ export default function GamePanel({ activeMode, onExit }) {
     initRound(next);
   }
 
-  // ── Tampilan kalau belum pilih mode ──────────────────────────
+  // ── Render ───────────────────────────────────────────────────
+
   if (!activeMode) {
     return (
       <div className="flex-1 flex flex-col items-center justify-center gap-4 p-8 text-center">
         <div className="text-6xl">🎮</div>
         <h2 className="text-xl font-bold text-gray-700 dark:text-gray-300">Pilih Mode Main</h2>
         <p className="text-sm text-gray-400 max-w-xs leading-relaxed">
-          Pilih mode di panel kiri untuk mulai bermain. VS Bot tersedia sekarang, mode lain segera hadir.
+          Pilih mode di panel kiri untuk mulai bermain.
         </p>
       </div>
     );
   }
 
-  // ── Tampilan ranked / friend — placeholder ───────────────────
-  if (activeMode === "ranked" || activeMode === "friend") {
+  // ── Ranked ───────────────────────────────────────────────────
+  if (activeMode === "ranked") {
+    if (!user) {
+      return (
+        <div className="flex-1 flex flex-col items-center justify-center gap-3 p-8 text-center">
+          <p className="text-5xl">🔒</p>
+          <p className="font-semibold">Harus login untuk main ranked</p>
+          <a href="/login" className="text-sm text-blue-500 hover:underline">Login sekarang</a>
+        </div>
+      );
+    }
+
+    if (rankPhase === "idle") {
+      return (
+        <div className="flex-1 flex flex-col items-center justify-center gap-5 p-8 text-center">
+          <div className="text-5xl">🏆</div>
+          <div>
+            <h2 className="text-xl font-bold">Ranked Match</h2>
+            <p className="text-sm text-gray-400 mt-1">Menang +25 · Kalah -15 · Draw +5</p>
+          </div>
+          <button
+            onClick={() => setRankPhase("matchmaking")}
+            className="px-8 py-3 bg-blue-500 hover:bg-blue-600 text-white rounded-xl font-semibold transition-colors"
+          >
+            Cari Lawan
+          </button>
+          <button onClick={onExit} className="text-sm text-gray-400 hover:text-gray-600">
+            ← Kembali
+          </button>
+        </div>
+      );
+    }
+
+    if (rankPhase === "matchmaking") {
+      return (
+        <Matchmaking
+          socket={socket}
+          user={user}
+          onMatched={(data) => {
+            setMatchData(data);
+            setRankPhase("playing");
+          }}
+          onCancel={() => setRankPhase("idle")}
+        />
+      );
+    }
+
+    if (rankPhase === "playing" && matchData) {
+      return (
+        <OnlineGame
+          socket={socket}
+          matchData={matchData}
+          currentUser={user}
+          onExit={() => {
+            setMatchData(null);
+            setRankPhase("idle");
+            onExit();
+          }}
+        />
+      );
+    }
+  }
+
+  // ── VS Friend placeholder ─────────────────────────────────────
+  if (activeMode === "friend") {
     return (
       <div className="flex-1 flex flex-col items-center justify-center gap-3 p-8 text-center">
         <div className="text-5xl">🚧</div>
@@ -158,17 +233,11 @@ export default function GamePanel({ activeMode, onExit }) {
   // ── VS Bot ───────────────────────────────────────────────────
   return (
     <div className="flex flex-col h-full">
-
-      {/* Header panel */}
       <div className="flex items-center justify-between px-4 py-3 border-b border-gray-100 dark:border-gray-800">
-        <button
-          onClick={onExit}
-          className="text-sm text-gray-400 hover:text-gray-700 dark:hover:text-gray-200 transition-colors"
-        >
+        <button onClick={onExit} className="text-sm text-gray-400 hover:text-gray-700 dark:hover:text-gray-200 transition-colors">
           ← Keluar
         </button>
         <span className="text-sm font-semibold">🤖 VS Bot</span>
-        {/* Difficulty */}
         <div className="flex gap-1">
           {["easy", "medium", "hard"].map((d) => (
             <button
@@ -186,12 +255,8 @@ export default function GamePanel({ activeMode, onExit }) {
         </div>
       </div>
 
-      {/* Konten game */}
       <div className="flex-1 flex flex-col items-center justify-center gap-4 p-4 overflow-auto">
-
-        {showFlip && flipResult && (
-          <CoinFlip result={flipResult} onDone={onFlipDone} />
-        )}
+        {showFlip && flipResult && <CoinFlip result={flipResult} onDone={onFlipDone} />}
 
         {firstPlayer && !isGameOver && (
           <p className="text-xs text-gray-400">
@@ -218,20 +283,15 @@ export default function GamePanel({ activeMode, onExit }) {
 
         <Board board={board} onCellClick={handleCellClick} winningLine={winningLine} />
 
-        {/* Score */}
         <div className="flex gap-5 text-sm text-gray-500">
           <span>Menang: <strong className="text-green-500">{score.win}</strong></span>
           <span>Kalah: <strong className="text-red-500">{score.lose}</strong></span>
           <span>Draw: <strong className="text-yellow-500">{score.draw}</strong></span>
         </div>
 
-        {/* Aksi */}
         <div className="flex gap-2">
           {!isGameOver && (
-            <button
-              onClick={handleSurrender}
-              className="px-4 py-2 bg-gray-100 dark:bg-gray-800 hover:bg-gray-200 dark:hover:bg-gray-700 text-gray-600 dark:text-gray-300 rounded-xl text-sm font-medium transition-colors"
-            >
+            <button onClick={handleSurrender} className="px-4 py-2 bg-gray-100 dark:bg-gray-800 hover:bg-gray-200 dark:hover:bg-gray-700 text-gray-600 dark:text-gray-300 rounded-xl text-sm font-medium transition-colors">
               🏳️ Menyerah
             </button>
           )}
