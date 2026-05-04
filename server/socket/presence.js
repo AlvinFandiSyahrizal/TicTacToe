@@ -1,16 +1,16 @@
 import { userSockets } from "./friends.js";
 
+// Hitung semua socket yang connect, bukan hanya yang login
 export function setupPresence(io, socket) {
-  // Register kalau ada user
   if (socket.user) {
     userSockets.set(socket.user.id, socket.id);
   }
 
-  // Emit ke semua client setiap ada yang connect
-  io.emit("online:count", userSockets.size);
-
-  // Emit khusus ke yang baru connect biar langsung dapat angka
-  socket.emit("online:count", userSockets.size);
+  // Pakai io.sockets.sockets.size untuk total semua koneksi
+  // Atau pakai userSockets.size kalau mau hitung logged-in user saja
+  const count = userSockets.size; // hanya user yang login
+  io.emit("online:count", count);
+  socket.emit("online:count", count);
 
   socket.on("disconnect", () => {
     if (socket.user) {

@@ -6,19 +6,21 @@ let socketInstance = null;
 
 export function useSocket() {
   const { token, isLoading } = useAuthStore();
-  const [connected, setConnected]   = useState(false);
+  const [connected, setConnected]     = useState(false);
   const [onlineCount, setOnlineCount] = useState(0);
-  const prevToken = useRef(undefined);
+  const prevToken = useRef(null);
+  const initialized = useRef(false);
 
   useEffect(() => {
-    // Tunggu auth selesai load dulu
+    // Tunggu auth selesai
     if (isLoading) return;
 
-    // Kalau token sama, tidak perlu reconnect
+    // Kalau token sama dan socket masih connect, skip
     if (prevToken.current === token && socketInstance?.connected) return;
+
     prevToken.current = token;
 
-    // Disconnect socket lama
+    // Disconnect yang lama
     if (socketInstance) {
       socketInstance.removeAllListeners();
       socketInstance.disconnect();
@@ -29,13 +31,13 @@ export function useSocket() {
       process.env.NEXT_PUBLIC_API_URL || "http://localhost:4000",
       {
         auth: { token: token || null },
-        reconnectionAttempts: 5,
-        reconnectionDelay: 2000,
+        reconnection: true,
+        reconnectionAttempts: Infinity,
+        reconnectionDelay: 1000,
+        reconnectionDelayMax: 5000,
         timeout: 10000,
       }
     );
-
-    socketInstance._token = token;
 
     socketInstance.on("connect", () => {
       setConnected(true);
@@ -49,10 +51,7 @@ export function useSocket() {
       setOnlineCount(count);
     });
 
-    return () => {
-      socketInstance?.off("online:count");
-    };
-  }, [token, isLoading]); // ← tambah isLoading
+  }, [token, isLoading]);
 
   return { socket: socketInstance, connected, onlineCount };
 }

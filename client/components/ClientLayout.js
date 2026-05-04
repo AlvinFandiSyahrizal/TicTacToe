@@ -3,19 +3,23 @@
 import { useEffect, useState } from "react";
 import { useAuthStore } from "@/lib/useAuthStore";
 import { useSocket } from "@/lib/useSocket";
-import { useRouter } from "next/navigation";
 import Navbar from "@/components/Navbar";
 import ChallengeToast from "@/components/ChallengeToast";
 
+// Global event bus — simpel tanpa library
+const gameReadyListeners = new Set();
+export function onFriendGameReady(fn) {
+  gameReadyListeners.add(fn);
+  return () => gameReadyListeners.delete(fn);
+}
+
 export default function ClientLayout({ children }) {
-  const init   = useAuthStore((s) => s.init);
+  const init = useAuthStore((s) => s.init);
   const { socket } = useSocket();
-  const router = useRouter();
   const [challenge, setChallenge] = useState(null);
 
   useEffect(() => { init(); }, []);
 
-  // Listener challenge global — jalan di semua halaman
   useEffect(() => {
     if (!socket) return;
 
@@ -24,13 +28,13 @@ export default function ClientLayout({ children }) {
     });
 
     socket.on("friends:challengeDeclined", ({ username }) => {
-      // Bisa tambah toast "X menolak tantanganmu" nanti
       console.log(`${username} menolak tantanganmu`);
     });
 
     socket.on("friends:gameReady", (matchData) => {
       setChallenge(null);
-      router.push(`/?friendGame=${encodeURIComponent(JSON.stringify(matchData))}`);
+      // Broadcast ke semua listener (page.js)
+      gameReadyListeners.forEach((fn) => fn(matchData));
     });
 
     return () => {
@@ -58,8 +62,6 @@ export default function ClientLayout({ children }) {
       <div className="flex-1 flex flex-col max-w-6xl w-full mx-auto px-3 py-3">
         {children}
       </div>
-
-      {/* Challenge toast — muncul di semua halaman */}
       {challenge && (
         <ChallengeToast
           challenge={challenge}
