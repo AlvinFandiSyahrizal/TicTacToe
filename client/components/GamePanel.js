@@ -16,13 +16,14 @@ import {
 } from "@/lib/gameEngine";
 import { getBotMove, randomMove } from "@/lib/botEngine";
 
-export default function GamePanel({ activeMode, onExit }) {
+export default function GamePanel({ activeMode, onExit, friendMatchData: incomingFriendMatch }) {
   const { user } = useAuthStore();
   const { socket } = useSocket();
 
   // Ranked state
   const [rankPhase, setRankPhase] = useState("idle"); // idle | matchmaking | playing
   const [matchData, setMatchData] = useState(null);
+  const [friendMatchData, setFriendMatchData] = useState(null);
 
   // Bot state
   const [board, setBoard]                 = useState(createBoard());
@@ -43,6 +44,12 @@ export default function GamePanel({ activeMode, onExit }) {
 
   const isGameOver   = winner !== null || isDraw || lostByTimeout || surrendered;
   const isPlayerTurn = currentPlayer === "X";
+
+  useEffect(() => {
+  if (incomingFriendMatch) {
+      setFriendMatchData(incomingFriendMatch);
+    }
+  }, [incomingFriendMatch]);
 
   useEffect(() => {
     if (activeMode === "bot") startNewSession();
@@ -168,26 +175,32 @@ export default function GamePanel({ activeMode, onExit }) {
       );
     }
 
-    if (rankPhase === "idle") {
-      return (
-        <div className="flex-1 flex flex-col items-center justify-center gap-5 p-8 text-center">
-          <div className="text-5xl">🏆</div>
-          <div>
-            <h2 className="text-xl font-bold">Ranked Match</h2>
-            <p className="text-sm text-gray-400 mt-1">Menang +25 · Kalah -15 · Draw +5</p>
-          </div>
-          <button
-            onClick={() => setRankPhase("matchmaking")}
-            className="px-8 py-3 bg-blue-500 hover:bg-blue-600 text-white rounded-xl font-semibold transition-colors"
-          >
-            Cari Lawan
-          </button>
-          <button onClick={onExit} className="text-sm text-gray-400 hover:text-gray-600">
-            ← Kembali
-          </button>
-        </div>
-      );
-    }
+if (rankPhase === "idle") {
+  return (
+    <div className="flex-1 flex flex-col items-center justify-center gap-5 p-8 text-center">
+      <div className="text-5xl">🏆</div>
+      <div>
+        <h2 className="text-xl font-bold">Ranked Match</h2>
+        <p className="text-sm text-gray-400 mt-1">Menang +25 · Kalah -15 · Draw +5</p>
+      </div>
+      <button
+        onClick={() => {
+          if (!socket) {
+            alert("Koneksi belum siap, tunggu sebentar");
+            return;
+          }
+          setRankPhase("matchmaking");
+        }}
+        className="px-8 py-3 bg-blue-500 hover:bg-blue-600 text-white rounded-xl font-semibold transition-colors"
+      >
+        Cari Lawan
+      </button>
+      <button onClick={onExit} className="text-sm text-gray-400 hover:text-gray-600">
+        ← Kembali
+      </button>
+    </div>
+  );
+}
 
     if (rankPhase === "matchmaking") {
       return (
@@ -221,11 +234,31 @@ export default function GamePanel({ activeMode, onExit }) {
 
   // ── VS Friend placeholder ─────────────────────────────────────
   if (activeMode === "friend") {
+    if (friendMatchData) {
+      return (
+        <OnlineGame
+          socket={socket}
+          matchData={friendMatchData}
+          currentUser={user}
+          onExit={() => {
+            setMatchData(null);
+            onExit();
+          }}
+        />
+      );
+    }
+
     return (
-      <div className="flex-1 flex flex-col items-center justify-center gap-3 p-8 text-center">
-        <div className="text-5xl">🚧</div>
-        <p className="font-semibold text-gray-600 dark:text-gray-400">Mode ini segera hadir</p>
-        <button onClick={onExit} className="text-sm text-blue-500 hover:underline">← Kembali</button>
+      <div className="flex-1 flex flex-col items-center justify-center gap-4 p-8 text-center">
+        <div className="text-5xl">👥</div>
+        <p className="font-semibold">VS Teman</p>
+        <p className="text-sm text-gray-400">
+          Tantang teman dari halaman{" "}
+          <a href="/friends" className="text-blue-500 hover:underline">Teman</a>
+        </p>
+        <button onClick={onExit} className="text-sm text-gray-400 hover:underline">
+          ← Kembali
+        </button>
       </div>
     );
   }

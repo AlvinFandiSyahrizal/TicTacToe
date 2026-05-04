@@ -17,13 +17,23 @@ export default function Navbar() {
 
       <div className="flex items-center gap-3">
         {user ? (
-          <Link href="/profile" className="flex items-center gap-2 hover:opacity-80 transition-opacity">
-            <Avatar id={user.avatarId || "knight"} size={32} />
-            <div className="hidden sm:flex flex-col items-start">
-              <span className="text-sm font-medium leading-tight">{user.username}</span>
-              <span className="text-xs text-gray-400 leading-tight">{rank?.name} · {user.points} pts</span>
-            </div>
-          </Link>
+          <>
+            <Link
+              href="/friends"
+              className="text-sm text-gray-500 hover:text-blue-500 transition-colors hidden sm:block"
+            >
+              Teman
+            </Link>
+            <Link href="/profile" className="flex items-center gap-2 hover:opacity-80 transition-opacity">
+              <Avatar id={user.avatarId || "knight"} size={32} />
+              <div className="hidden sm:flex flex-col items-start">
+                <span className="text-sm font-medium leading-tight">{user.username}</span>
+                <span className="text-xs text-gray-400 leading-tight">
+                  {rank?.name} · {user.points} pts
+                </span>
+              </div>
+            </Link>
+          </>
         ) : (
           <div className="flex gap-2 text-sm">
             <Link href="/login" className="px-3 py-1.5 text-gray-600 dark:text-gray-400 hover:text-blue-500 transition-colors">

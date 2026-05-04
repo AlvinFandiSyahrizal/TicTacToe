@@ -18,8 +18,20 @@ export default function OnlineGame({ socket, matchData, currentUser, onExit }) {
 
   const isPlayer1   = currentUser.id === matchData.player1.id;
   const mySymbol    = isPlayer1 ? "X" : "O";
-  const me          = isPlayer1 ? matchData.player1 : matchData.player2;
-  const opponent    = isPlayer1 ? matchData.player2 : matchData.player1;
+
+  const opponent = isPlayer1 ? matchData.player2 : matchData.player1;
+  const me       = isPlayer1 ? matchData.player1 : matchData.player2;
+
+  // guard kalau data lawan belum masuk
+  if (!me || !opponent) {
+    return (
+      <div className="flex-1 flex items-center justify-center">
+        <p className="text-gray-400 text-sm">
+          Menghubungkan ke lawan...
+        </p>
+      </div>
+    );
+  }
   const isMyTurn    = currentTurn === currentUser.id;
 
   useEffect(() => {
@@ -133,7 +145,7 @@ export default function OnlineGame({ socket, matchData, currentUser, onExit }) {
           <Timer
             duration={15}
             isActive={isMyTurn}
-            onTimeout={() => {}} // server yang handle timeout
+            onTimeout={() => {}} // server yang handle, client hanya tampilan
             resetKey={timerKey}
           />
         )}
