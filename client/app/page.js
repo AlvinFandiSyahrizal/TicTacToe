@@ -8,6 +8,7 @@ import GamePanel from "@/components/GamePanel";
 import FriendMiniProfile from "@/components/FriendMiniProfile";
 import api from "@/lib/api";
 import { useSocket } from "@/lib/useSocket";
+import { onFriendGameReady } from "@/components/ClientLayout";
 
 const MODES = [
   { id: "bot",    icon: "🤖", title: "VS Bot",   desc: "Lawan komputer",         available: true },
@@ -30,19 +31,14 @@ export default function Home() {
 
   const rank = user ? getRank(user.points) : null;
 
-  useEffect(() => {
-    if (typeof window === "undefined") return;
-    const params = new URLSearchParams(window.location.search);
-    const friendGame = params.get("friendGame");
-    if (friendGame) {
-      try {
-        const matchData = JSON.parse(decodeURIComponent(friendGame));
-        setActiveMode("friend");
-        setFriendMatchData(matchData);
-        window.history.replaceState({}, "", "/");
-      } catch {}
-    }
-  }, []);
+useEffect(() => {
+  // Subscribe ke friend game event dari ClientLayout
+  const unsub = onFriendGameReady((matchData) => {
+    setActiveMode("friend");
+    setFriendMatchData(matchData);
+  });
+  return unsub;
+}, []);
 
   useEffect(() => {
     api.get("/api/user/leaderboard")
