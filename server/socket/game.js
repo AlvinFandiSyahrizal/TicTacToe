@@ -26,32 +26,31 @@ const games = new Map();
 export function setupGame(io, socket) {
 
   // Init game setelah match ditemukan
-  socket.on("game:init", ({ roomId, gameId, firstTurn, player1, player2 }) => {
-    if (!games.has(roomId)) {
-      games.set(roomId, {
-        gameId,
-        board: Array(9).fill(null),
-        currentTurn: firstTurn,  // userId siapa yang jalan
-        player1,  // { id, username, avatarId, points } — selalu X
-        player2,  // — selalu O
-        timers: {},
-      });
-    }
-
-    const game = games.get(roomId);
-    socket.join(roomId);
-
-    // Kirim state awal ke yang baru join
-    socket.emit("game:state", {
-      board: game.board,
-      currentTurn: game.currentTurn,
-      player1: game.player1,
-      player2: game.player2,
+socket.on("game:init", ({ roomId, gameId, firstTurn, player1, player2, isFriendGame }) => {
+  if (!games.has(roomId)) {
+    games.set(roomId, {
+      gameId,
+      board: Array(9).fill(null),
+      currentTurn: firstTurn,
+      player1,
+      player2,
+      isFriendGame: isFriendGame || false,
+      timers: {},
     });
+  }
 
-    // Mulai timer untuk yang giliran pertama
-    startTurnTimer(io, roomId);
+  const game = games.get(roomId);
+  socket.join(roomId);
+
+  socket.emit("game:state", {
+    board: game.board,
+    currentTurn: game.currentTurn,
+    player1: game.player1,
+    player2: game.player2,
   });
+
+  startTurnTimer(io, roomId);
+});
 
   // Player move
   socket.on("game:move", ({ roomId, index }) => {
@@ -232,13 +231,33 @@ async function endGame(io, roomId, winnerId, reason) {
   const game = games.get(roomId);
   if (!game) return;
 
-  const POINTS_WIN  = 25;
+  // Friend game — simpan ke FriendGame table, tidak update poin
+  if (game.isFriendGame) {
+    try {
+      await prisma.friendGame.create({
+        data: {
+          player1Id: game.player1.id,
+          player2Id: game.player2.id,
+          winnerId:  winnerId || null,
+        },
+      });
+    } catch (err) {
+      console.error("friendGame save error:", err);
+    }
+    games.delete(roomId);
+    return; // ← stop di sini, tidak update poin
+  }
+
+  // Ranked game — update poin seperti biasa
+  const POINTS_WIN  =  25;
   const POINTS_LOSE = -15;
-  const POINTS_DRAW = 5;
+  const POINTS_DRAW =   5;
 
   try {
     if (winnerId) {
-      const loserId = winnerId === game.player1.id ? game.player2.id : game.player1.id;
+      const loserId = winnerId === game.player1.id
+        ? game.player2.id
+        : game.player1.id;
 
       await prisma.user.update({
         where: { id: winnerId },
@@ -246,21 +265,17 @@ async function endGame(io, roomId, winnerId, reason) {
       });
       await prisma.user.update({
         where: { id: loserId },
-        data: {
-          points: { increment: POINTS_LOSE },
-          losses: { increment: 1 },
-        },
+        data: { points: { increment: POINTS_LOSE }, losses: { increment: 1 } },
       });
       await prisma.game.update({
         where: { id: game.gameId },
         data: {
-          winner: winnerId === game.player1.id ? "player1" : "player2",
-          endReason: reason,
+          winner:      winnerId === game.player1.id ? "player1" : "player2",
+          endReason:   reason,
           pointChange: POINTS_WIN,
         },
       });
     } else {
-      // Draw
       await prisma.user.update({
         where: { id: game.player1.id },
         data: { points: { increment: POINTS_DRAW }, draws: { increment: 1 } },

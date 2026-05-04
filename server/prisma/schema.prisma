@@ -24,6 +24,9 @@ model User {
   gamesAsP2        Game[]       @relation("Player2")
   sentRequests     Friendship[] @relation("Sender")
   receivedRequests Friendship[] @relation("Receiver")
+  friendGamesAsP1 FriendGame[] @relation("FG_Player1")
+  friendGamesAsP2 FriendGame[] @relation("FG_Player2")
+
 }
 
 model Game {
@@ -50,4 +53,15 @@ model Friendship {
   receiver User @relation("Receiver", fields: [receiverId], references: [id])
 
   @@unique([senderId, receiverId])
+}
+
+model FriendGame {
+  id        String   @id @default(cuid())
+  player1Id String
+  player2Id String
+  winnerId  String?
+  createdAt DateTime @default(now())
+
+  player1 User @relation("FG_Player1", fields: [player1Id], references: [id])
+  player2 User @relation("FG_Player2", fields: [player2Id], references: [id])
 }

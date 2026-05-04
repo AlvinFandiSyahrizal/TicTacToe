@@ -5,28 +5,28 @@ const queue = new Map(); // socketId → { socket, user, joinedAt }
 export function setupMatchmaking(io, socket) {
 
   // Player join queue
-  socket.on("matchmaking:join", () => {
-    if (!socket.user) {
-      socket.emit("matchmaking:error", { message: "Harus login dulu untuk ranked" });
-      return;
-    }
-
-    if (queue.has(socket.id)) return; // sudah di queue
-
-    queue.set(socket.id, {
-      socket,
-      user: socket.user,
-      joinedAt: Date.now(),
+socket.on("matchmaking:join", () => {
+  // Cek lagi di server
+  if (!socket.user || !socket.user.id) {
+    socket.emit("matchmaking:error", { 
+      message: "Sesi login kamu tidak valid, coba login ulang" 
     });
+    return;
+  }
 
-    socket.emit("matchmaking:waiting", { position: queue.size });
+  if (queue.has(socket.id)) return;
 
-    // Broadcast jumlah di queue
-    io.emit("matchmaking:queueSize", queue.size);
-
-    // Coba match
-    tryMatch(io);
+  queue.set(socket.id, {
+    socket,
+    user: socket.user,
+    joinedAt: Date.now(),
   });
+
+  socket.emit("matchmaking:waiting", { position: queue.size });
+  io.emit("matchmaking:queueSize", queue.size);
+
+  tryMatch(io);
+});
 
   // Player cancel queue
   socket.on("matchmaking:cancel", () => {

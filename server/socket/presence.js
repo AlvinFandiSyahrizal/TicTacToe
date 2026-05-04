@@ -1,24 +1,21 @@
-const onlineUsers = new Map(); // socketId → { username, avatarId, points }
+import { userSockets } from "./friends.js";
 
 export function setupPresence(io, socket) {
-  // Register user online
+  // Register kalau ada user
   if (socket.user) {
-    onlineUsers.set(socket.id, {
-      username: socket.user.username,
-      avatarId: socket.user.avatarId,
-      points: socket.user.points,
-    });
+    userSockets.set(socket.user.id, socket.id);
   }
 
-  // Broadcast jumlah online ke semua
-  io.emit("online:count", onlineUsers.size);
+  // Emit ke semua client setiap ada yang connect
+  io.emit("online:count", userSockets.size);
+
+  // Emit khusus ke yang baru connect biar langsung dapat angka
+  socket.emit("online:count", userSockets.size);
 
   socket.on("disconnect", () => {
-    onlineUsers.delete(socket.id);
-    io.emit("online:count", onlineUsers.size);
+    if (socket.user) {
+      userSockets.delete(socket.user.id);
+    }
+    io.emit("online:count", userSockets.size);
   });
-}
-
-export function getOnlineUsers() {
-  return onlineUsers;
 }

@@ -6,6 +6,7 @@ import { Server } from "socket.io";
 import authRoutes from "./routes/auth.js";
 import userRoutes from "./routes/user.js";
 import { initSocket } from "./socket/index.js";
+import friendRoutes from "./routes/friends.js";
 
 dotenv.config();
 
@@ -14,24 +15,23 @@ const httpServer = createServer(app);
 
 const io = new Server(httpServer, {
   cors: {
-    origin: [process.env.CLIENT_URL, "http://localhost:3000"],
+    origin: process.env.CLIENT_URL || "http://localhost:3000",
     methods: ["GET", "POST"],
     credentials: true,
   },
 });
 
 app.use(cors({
-  origin: [process.env.CLIENT_URL, "http://localhost:3000"],
-  methods: ["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
+  origin: process.env.CLIENT_URL || "http://localhost:3000",
   credentials: true,
 }));
-
-app.options("*", cors());
 
 app.use(express.json());
 
 app.use("/api/auth", authRoutes);
 app.use("/api/user", userRoutes);
+
+app.use("/api/friends", friendRoutes);
 
 app.get("/", (req, res) => res.json({ status: "TTC Online server running" }));
 
