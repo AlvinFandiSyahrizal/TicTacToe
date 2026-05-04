@@ -25,9 +25,10 @@ const disconnectTimers = new Map();
 
 export function setupGame(io, socket) {
 
-  // ── Init game ─────────────────────────────────────────────────────────
   socket.on("game:init", ({ roomId, gameId, firstTurn, player1, player2, isFriendGame }) => {
-    if (!games.has(roomId)) {
+    const isNewGame = !games.has(roomId);
+
+    if (isNewGame) {
       games.set(roomId, {
         gameId,
         board: Array(9).fill(null),
@@ -36,6 +37,7 @@ export function setupGame(io, socket) {
         player2,
         isFriendGame: isFriendGame || false,
         timers: {},
+        readyCount: 0,
       });
     }
 
@@ -49,14 +51,16 @@ export function setupGame(io, socket) {
       player2: game.player2,
     });
 
-    startTurnTimer(io, roomId);
+    // Timer hanya jalan setelah kedua player init
+    game.readyCount = (game.readyCount || 0) + 1;
+    if (game.readyCount === 2) {
+      startTurnTimer(io, roomId);
+    }
   });
 
-  // ── Reconnect ─────────────────────────────────────────────────────────
   socket.on("game:reconnect", ({ roomId }) => {
     if (!socket.user) return;
 
-    // Batalkan disconnect timer kalau ada
     const timerKey = `${roomId}_${socket.user.id}`;
     const timer = disconnectTimers.get(timerKey);
     if (timer) {
@@ -79,7 +83,6 @@ export function setupGame(io, socket) {
     });
   });
 
-  // ── Move ──────────────────────────────────────────────────────────────
   socket.on("game:move", ({ roomId, index }) => {
     if (!socket.user) return;
 
@@ -132,7 +135,6 @@ export function setupGame(io, socket) {
     }
   });
 
-  // ── Surrender ─────────────────────────────────────────────────────────
   socket.on("game:surrender", ({ roomId }) => {
     if (!socket.user) return;
     const game = games.get(roomId);
@@ -155,7 +157,6 @@ export function setupGame(io, socket) {
     endGame(io, roomId, winnerId, "surrender");
   });
 
-  // ── Disconnect ────────────────────────────────────────────────────────
   socket.on("disconnect", () => {
     for (const [roomId, game] of games.entries()) {
       const isPlayer =
@@ -164,7 +165,6 @@ export function setupGame(io, socket) {
 
       if (!isPlayer) continue;
 
-      // Grace period 30 detik sebelum dianggap benar-benar disconnect
       const timerKey = `${roomId}_${socket.user.id}`;
       const timer = setTimeout(() => {
         const currentGame = games.get(roomId);
@@ -194,55 +194,58 @@ export function setupGame(io, socket) {
   });
 }
 
-// ── Timer giliran ────────────────────────────────────────────────────────
 function startTurnTimer(io, roomId) {
   const game = games.get(roomId);
   if (!game) return;
 
+  clearTurnTimer(roomId);
+
   game.timers.turn = setTimeout(() => {
-    const emptyCells = game.board
+    const currentGame = games.get(roomId);
+    if (!currentGame) return;
+
+    const emptyCells = currentGame.board
       .map((cell, i) => cell === null ? i : null)
       .filter((i) => i !== null);
 
     if (emptyCells.length === 0) return;
 
     const randomIndex = emptyCells[Math.floor(Math.random() * emptyCells.length)];
-    const currentPlayer = game.currentTurn === game.player1.id ? game.player1 : game.player2;
-    const symbol = game.currentTurn === game.player1.id ? "X" : "O";
+    const symbol = currentGame.currentTurn === currentGame.player1.id ? "X" : "O";
 
-    game.board[randomIndex] = symbol;
+    currentGame.board[randomIndex] = symbol;
 
-    const { winner, line } = checkWinner(game.board);
-    const draw = !winner && checkDraw(game.board);
+    const { winner, line } = checkWinner(currentGame.board);
+    const draw = !winner && checkDraw(currentGame.board);
 
     if (winner || draw) {
       const winnerId = winner
-        ? (symbol === "X" ? game.player1.id : game.player2.id)
+        ? (symbol === "X" ? currentGame.player1.id : currentGame.player2.id)
         : null;
 
       io.to(roomId).emit("game:over", {
-        board: game.board,
+        board: currentGame.board,
         winner: winnerId,
         winningLine: line,
         isDraw: draw,
         reason: "timeout",
-        timedOutBy: currentPlayer.id,
       });
 
       endGame(io, roomId, winnerId, "timeout");
     } else {
-      game.currentTurn = game.currentTurn === game.player1.id
-        ? game.player2.id
-        : game.player1.id;
+      currentGame.currentTurn = currentGame.currentTurn === currentGame.player1.id
+        ? currentGame.player2.id
+        : currentGame.player1.id;
 
       io.to(roomId).emit("game:update", {
-        board: game.board,
-        currentTurn: game.currentTurn,
+        board: currentGame.board,
+        currentTurn: currentGame.currentTurn,
         lastMove: randomIndex,
         reason: "timeout",
       });
 
-      setTimeout(() => startTurnTimer(io, roomId), 1000);
+      // Delay 1.5 detik sebelum timer berikutnya — cegah efek domino
+      setTimeout(() => startTurnTimer(io, roomId), 1500);
     }
   }, 15000);
 }
@@ -255,10 +258,11 @@ function clearTurnTimer(roomId) {
   }
 }
 
-// ── End game ──────────────────────────────────────────────────────────────
 async function endGame(io, roomId, winnerId, reason) {
   const game = games.get(roomId);
   if (!game) return;
+
+  games.delete(roomId);
 
   if (game.isFriendGame) {
     try {
@@ -272,7 +276,6 @@ async function endGame(io, roomId, winnerId, reason) {
     } catch (err) {
       console.error("friendGame save error:", err);
     }
-    games.delete(roomId);
     return;
   }
 
@@ -319,6 +322,4 @@ async function endGame(io, roomId, winnerId, reason) {
   } catch (err) {
     console.error("endGame DB error:", err);
   }
-
-  games.delete(roomId);
 }
