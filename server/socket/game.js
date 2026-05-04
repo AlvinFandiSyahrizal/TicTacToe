@@ -20,69 +20,91 @@ function checkDraw(board) {
   return board.every((c) => c !== null);
 }
 
-// roomId → game state
 const games = new Map();
+const disconnectTimers = new Map();
 
 export function setupGame(io, socket) {
 
-  // Init game setelah match ditemukan
-socket.on("game:init", ({ roomId, gameId, firstTurn, player1, player2, isFriendGame }) => {
-  if (!games.has(roomId)) {
-    games.set(roomId, {
-      gameId,
-      board: Array(9).fill(null),
-      currentTurn: firstTurn,
-      player1,
-      player2,
-      isFriendGame: isFriendGame || false,
-      timers: {},
+  // ── Init game ─────────────────────────────────────────────────────────
+  socket.on("game:init", ({ roomId, gameId, firstTurn, player1, player2, isFriendGame }) => {
+    if (!games.has(roomId)) {
+      games.set(roomId, {
+        gameId,
+        board: Array(9).fill(null),
+        currentTurn: firstTurn,
+        player1,
+        player2,
+        isFriendGame: isFriendGame || false,
+        timers: {},
+      });
+    }
+
+    const game = games.get(roomId);
+    socket.join(roomId);
+
+    socket.emit("game:state", {
+      board: game.board,
+      currentTurn: game.currentTurn,
+      player1: game.player1,
+      player2: game.player2,
     });
-  }
 
-  const game = games.get(roomId);
-  socket.join(roomId);
-
-  socket.emit("game:state", {
-    board: game.board,
-    currentTurn: game.currentTurn,
-    player1: game.player1,
-    player2: game.player2,
+    startTurnTimer(io, roomId);
   });
 
-  startTurnTimer(io, roomId);
-});
+  // ── Reconnect ─────────────────────────────────────────────────────────
+  socket.on("game:reconnect", ({ roomId }) => {
+    if (!socket.user) return;
 
-  // Player move
+    // Batalkan disconnect timer kalau ada
+    const timerKey = `${roomId}_${socket.user.id}`;
+    const timer = disconnectTimers.get(timerKey);
+    if (timer) {
+      clearTimeout(timer);
+      disconnectTimers.delete(timerKey);
+    }
+
+    const game = games.get(roomId);
+    if (!game) {
+      socket.emit("game:notFound");
+      return;
+    }
+
+    socket.join(roomId);
+    socket.emit("game:state", {
+      board: game.board,
+      currentTurn: game.currentTurn,
+      player1: game.player1,
+      player2: game.player2,
+    });
+  });
+
+  // ── Move ──────────────────────────────────────────────────────────────
   socket.on("game:move", ({ roomId, index }) => {
     if (!socket.user) return;
 
     const game = games.get(roomId);
     if (!game) return;
 
-    // Validasi giliran
     if (game.currentTurn !== socket.user.id) {
       socket.emit("game:error", { message: "Bukan giliran kamu" });
       return;
     }
 
-    // Validasi cell
     if (game.board[index] !== null) {
       socket.emit("game:error", { message: "Cell sudah terisi" });
       return;
     }
 
-    // Tentukan simbol (player1 = X, player2 = O)
     const symbol = socket.user.id === game.player1.id ? "X" : "O";
     game.board[index] = symbol;
 
-    // Clear timer giliran sebelumnya
     clearTurnTimer(roomId);
 
     const { winner, line } = checkWinner(game.board);
     const draw = !winner && checkDraw(game.board);
 
     if (winner || draw) {
-      // Game selesai
       const winnerId = winner
         ? (symbol === "X" ? game.player1.id : game.player2.id)
         : null;
@@ -96,7 +118,6 @@ socket.on("game:init", ({ roomId, gameId, firstTurn, player1, player2, isFriendG
 
       endGame(io, roomId, winnerId, "normal");
     } else {
-      // Ganti giliran
       game.currentTurn = socket.user.id === game.player1.id
         ? game.player2.id
         : game.player1.id;
@@ -111,7 +132,7 @@ socket.on("game:init", ({ roomId, gameId, firstTurn, player1, player2, isFriendG
     }
   });
 
-  // Surrender
+  // ── Surrender ─────────────────────────────────────────────────────────
   socket.on("game:surrender", ({ roomId }) => {
     if (!socket.user) return;
     const game = games.get(roomId);
@@ -134,22 +155,27 @@ socket.on("game:init", ({ roomId, gameId, firstTurn, player1, player2, isFriendG
     endGame(io, roomId, winnerId, "surrender");
   });
 
-  // Disconnect saat game berlangsung
+  // ── Disconnect ────────────────────────────────────────────────────────
   socket.on("disconnect", () => {
-    // Cari room yang diikuti socket ini
     for (const [roomId, game] of games.entries()) {
       const isPlayer =
-        socket.user?.id === game.player1.id ||
-        socket.user?.id === game.player2.id;
+        socket.user?.id === game.player1?.id ||
+        socket.user?.id === game.player2?.id;
 
-      if (isPlayer) {
-        clearTurnTimer(roomId);
-        const winnerId = socket.user.id === game.player1.id
-          ? game.player2.id
-          : game.player1.id;
+      if (!isPlayer) continue;
+
+      // Grace period 30 detik sebelum dianggap benar-benar disconnect
+      const timerKey = `${roomId}_${socket.user.id}`;
+      const timer = setTimeout(() => {
+        const currentGame = games.get(roomId);
+        if (!currentGame) return;
+
+        const winnerId = socket.user.id === currentGame.player1.id
+          ? currentGame.player2.id
+          : currentGame.player1.id;
 
         io.to(roomId).emit("game:over", {
-          board: game.board,
+          board: currentGame.board,
           winner: winnerId,
           winningLine: null,
           isDraw: false,
@@ -157,20 +183,23 @@ socket.on("game:init", ({ roomId, gameId, firstTurn, player1, player2, isFriendG
           disconnectedBy: socket.user.id,
         });
 
+        clearTurnTimer(roomId);
         endGame(io, roomId, winnerId, "disconnect");
-        break;
-      }
+        disconnectTimers.delete(timerKey);
+      }, 30000);
+
+      disconnectTimers.set(timerKey, timer);
+      break;
     }
   });
 }
 
-// ── Timer giliran (15 detik) ─────────────────────────────────────────────
+// ── Timer giliran ────────────────────────────────────────────────────────
 function startTurnTimer(io, roomId) {
   const game = games.get(roomId);
   if (!game) return;
 
   game.timers.turn = setTimeout(() => {
-    // Waktu habis → random move
     const emptyCells = game.board
       .map((cell, i) => cell === null ? i : null)
       .filter((i) => i !== null);
@@ -213,7 +242,7 @@ function startTurnTimer(io, roomId) {
         reason: "timeout",
       });
 
-      startTurnTimer(io, roomId);
+      setTimeout(() => startTurnTimer(io, roomId), 1000);
     }
   }, 15000);
 }
@@ -226,29 +255,27 @@ function clearTurnTimer(roomId) {
   }
 }
 
-// ── End game — update DB & poin ──────────────────────────────────────────
+// ── End game ──────────────────────────────────────────────────────────────
 async function endGame(io, roomId, winnerId, reason) {
   const game = games.get(roomId);
   if (!game) return;
 
-  // Friend game — simpan ke FriendGame table, tidak update poin
   if (game.isFriendGame) {
     try {
       await prisma.friendGame.create({
         data: {
           player1Id: game.player1.id,
           player2Id: game.player2.id,
-          winnerId:  winnerId || null,
+          winnerId: winnerId || null,
         },
       });
     } catch (err) {
       console.error("friendGame save error:", err);
     }
     games.delete(roomId);
-    return; // ← stop di sini, tidak update poin
+    return;
   }
 
-  // Ranked game — update poin seperti biasa
   const POINTS_WIN  =  25;
   const POINTS_LOSE = -15;
   const POINTS_DRAW =   5;
@@ -270,8 +297,8 @@ async function endGame(io, roomId, winnerId, reason) {
       await prisma.game.update({
         where: { id: game.gameId },
         data: {
-          winner:      winnerId === game.player1.id ? "player1" : "player2",
-          endReason:   reason,
+          winner: winnerId === game.player1.id ? "player1" : "player2",
+          endReason: reason,
           pointChange: POINTS_WIN,
         },
       });
@@ -295,4 +322,3 @@ async function endGame(io, roomId, winnerId, reason) {
 
   games.delete(roomId);
 }
-

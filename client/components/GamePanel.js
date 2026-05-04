@@ -289,7 +289,15 @@ if (rankPhase === "idle") {
       </div>
 
       <div className="flex-1 flex flex-col items-center justify-center gap-4 p-4 overflow-auto">
-        {showFlip && flipResult && <CoinFlip result={flipResult} onDone={onFlipDone} />}
+        {showFlip && flipResult && (
+          <CoinFlip
+            firstPlayer={flipResult}
+            player1={null}
+            player2={null}
+            myId={null}
+            onDone={onFlipDone}
+          />
+        )}
 
         {firstPlayer && !isGameOver && (
           <p className="text-xs text-gray-400">
